@@ -62,6 +62,8 @@ type options struct {
 	// resource if the resource does not inherently belong to a specific
 	// project, e.g. on-premise resource like k8s_container or generic_task.
 	projectID string
+	// compression enables gzip compression on gRPC calls.
+	compression string
 	// traceClientOptions are additional options to be passed
 	// to the underlying Stackdriver Trace API client.
 	// Optional.
@@ -121,6 +123,13 @@ func WithContext(ctx context.Context) func(o *options) {
 func WithTimeout(t time.Duration) func(o *options) {
 	return func(o *options) {
 		o.timeout = t
+	}
+}
+
+// WithCompression sets the compression to use for gRPC requests.
+func WithCompression(c string) func(o *options) {
+	return func(o *options) {
+		o.compression = c
 	}
 }
 

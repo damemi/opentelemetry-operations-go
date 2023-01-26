@@ -22,10 +22,13 @@ import (
 	"time"
 
 	traceclient "cloud.google.com/go/trace/apiv2"
+	"github.com/googleapis/gax-go/v2"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/multierr"
 	"google.golang.org/api/option"
 	tracepb "google.golang.org/genproto/googleapis/devtools/cloudtrace/v2"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -46,6 +49,12 @@ func newTraceExporter(o *options) (*traceExporter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("stackdriver: couldn't initiate trace client: %v", err)
 	}
+
+	if o.compression == "gzip" {
+		client.CallOptions.BatchWriteSpans = append(client.CallOptions.BatchWriteSpans,
+			gax.WithGRPCOptions(grpc.UseCompressor(gzip.Name)))
+	}
+
 	e := &traceExporter{
 		projectID:      o.projectID,
 		client:         client,

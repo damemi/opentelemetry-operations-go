@@ -56,6 +56,9 @@ func NewGoogleCloudTracesExporter(ctx context.Context, cfg Config, version strin
 	if cfg.TraceConfig.AttributeMappings != nil {
 		topts = append(topts, cloudtrace.WithAttributeMapping(mappingFuncFromAKM(cfg.TraceConfig.AttributeMappings)))
 	}
+	if cfg.TraceConfig.ClientConfig.Compression == CompressionGzip {
+		topts = append(topts, cloudtrace.WithCompression(cfg.TraceConfig.ClientConfig.Compression))
+	}
 
 	copts, err := generateClientOptions(ctx, &cfg.TraceConfig.ClientConfig, &cfg, traceapi.DefaultAuthScopes())
 	if err != nil {

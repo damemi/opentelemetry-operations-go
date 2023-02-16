@@ -214,6 +214,7 @@ func (l *LogsExporter) PushLogs(ctx context.Context, ld plog.Logs) error {
 
 			entries = entries[entry:]
 			entry = 0
+			currentBatchSize = 0
 		}
 	}
 

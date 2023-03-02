@@ -111,19 +111,23 @@ type labels map[string]string
 
 func (me *MetricsExporter) Shutdown(ctx context.Context) error {
 	// TODO: pass ctx to goroutines so that we can use its deadline
-	close(me.shutdownC)
-	c := make(chan struct{})
-	go func() {
-		// Wait until all goroutines are done
-		me.goroutines.Wait()
-		close(c)
-	}()
-	select {
-	case <-ctx.Done():
-		me.obs.log.Error("Error waiting for async tasks to finish.", zap.Error(ctx.Err()))
-	case <-c:
-	}
-	return me.client.Close()
+	/*
+		close(me.shutdownC)
+		c := make(chan struct{})
+		go func() {
+			// Wait until all goroutines are done
+			me.goroutines.Wait()
+			close(c)
+		}()
+		select {
+		case <-ctx.Done():
+			me.obs.log.Error("Error waiting for async tasks to finish.", zap.Error(ctx.Err()))
+		case <-c:
+		}
+		return me.client.Close()
+	*/
+	fmt.Println("Not actually doing anything for shutdown")
+	return nil
 }
 
 func NewGoogleCloudMetricsExporter(
@@ -133,6 +137,7 @@ func NewGoogleCloudMetricsExporter(
 	version string,
 	timeout time.Duration,
 ) (*MetricsExporter, error) {
+	fmt.Printf("Using hacked metrics exporter\n\n\n")
 	// TODO: https://github.com/GoogleCloudPlatform/opentelemetry-operations-go/pull/537#discussion_r1038290097
 	//nolint:errcheck
 	view.Register(MetricViews()...)
@@ -200,6 +205,7 @@ func NewGoogleCloudMetricsExporter(
 
 // PushMetrics calls pushes pdata metrics to GCM, creating metric descriptors if necessary.
 func (me *MetricsExporter) PushMetrics(ctx context.Context, m pmetric.Metrics) error {
+	fmt.Printf("Pushing metrics\n\n\n")
 	// map from project -> []timeseries. This groups timeseries by the project
 	// they need to be sent to. Each project's timeseries are sent in a
 	// separate request later.
@@ -277,10 +283,11 @@ func (me *MetricsExporter) PushMetrics(ctx context.Context, m pmetric.Metrics) e
 				Name:       projectName(projectID),
 				TimeSeries: ts,
 			}
+			fmt.Printf("Creating time series for project %s: %+v\n\n\n", projectName(projectID), ts)
 			if me.cfg.MetricConfig.CreateServiceTimeSeries {
-				err = me.createServiceTimeSeries(ctx, req)
+				err = me.createServiceTimeSeries(context.TODO(), req)
 			} else {
-				err = me.createTimeSeries(ctx, req)
+				err = me.createTimeSeries(context.TODO(), req)
 			}
 
 			var st string
@@ -297,9 +304,9 @@ func (me *MetricsExporter) PushMetrics(ctx context.Context, m pmetric.Metrics) e
 			}
 
 			// always record the number of successful points
-			recordPointCountDataPoint(ctx, succeededPoints, "OK")
+			recordPointCountDataPoint(context.TODO(), succeededPoints, "OK")
 			if failedPoints > 0 {
-				recordPointCountDataPoint(ctx, failedPoints, st)
+				recordPointCountDataPoint(context.TODO(), failedPoints, st)
 			}
 			if err != nil {
 				errs = append(errs, fmt.Errorf("failed to export time series to GCM: %+v", s))

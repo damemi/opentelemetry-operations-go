@@ -20,18 +20,22 @@ package collector
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"net/url"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
 	monitoring "cloud.google.com/go/monitoring/apiv3/v2"
 	"cloud.google.com/go/monitoring/apiv3/v2/monitoringpb"
+	"github.com/fsnotify/fsnotify"
 	"go.opencensus.io/plugin/ocgrpc"
 	"go.opencensus.io/stats/view"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -43,13 +47,16 @@ import (
 	metricpb "google.golang.org/genproto/googleapis/api/metric"
 	monitoredrespb "google.golang.org/genproto/googleapis/api/monitoredres"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/googleapis/gax-go/v2"
+	"github.com/tidwall/wal"
 
 	"github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/collector/internal/datapointstorage"
 	"github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/collector/internal/normalization"
@@ -79,6 +86,11 @@ type MetricsExporter struct {
 	// goroutines tracks the currently running child tasks
 	goroutines sync.WaitGroup
 	timeout    time.Duration
+	// write ahead log handles exporter retries in-order to handle network outages
+	wal       *wal.Log
+	walPath   string
+	rWALIndex *atomic.Uint64
+	wWALIndex *atomic.Uint64
 }
 
 // requestInfo is meant to abstract info from CreateMetricsDescriptorRequests and
@@ -116,6 +128,12 @@ func (me *MetricsExporter) Shutdown(ctx context.Context) error {
 	go func() {
 		// Wait until all goroutines are done
 		me.goroutines.Wait()
+		// Close the WAL if open
+		if me.wal != nil {
+			if err := me.wal.Close(); err != nil {
+				fmt.Printf("error closing WAL: %+v\n", err)
+			}
+		}
 		close(c)
 	}()
 	select {
@@ -182,6 +200,8 @@ func NewGoogleCloudMetricsExporter(
 		mdCache:           make(map[string]*monitoringpb.CreateMetricDescriptorRequest),
 		shutdownC:         shutdown,
 		timeout:           timeout,
+		rWALIndex:         &atomic.Uint64{},
+		wWALIndex:         &atomic.Uint64{},
 	}
 
 	mExp.requestOpts = make([]func(*context.Context, requestInfo), 0)
@@ -191,11 +211,45 @@ func NewGoogleCloudMetricsExporter(
 		})
 	}
 
+	if cfg.MetricConfig.WALConfig.Enabled {
+		err = mExp.setupWAL()
+		if err != nil {
+			return nil, err
+		}
+		// start WAL popper routine
+		mExp.goroutines.Add(1)
+		go mExp.walRunner(ctx)
+	}
+
 	// Fire up the metric descriptor exporter.
 	mExp.goroutines.Add(1)
 	go mExp.exportMetricDescriptorRunner()
 
 	return mExp, nil
+}
+
+func (me *MetricsExporter) setupWAL() error {
+	walPath := filepath.Join(me.cfg.MetricConfig.WALConfig.Directory, "gcp_metrics_wal")
+	me.walPath = walPath
+	metricWal, err := wal.Open(walPath, nil)
+	if err != nil {
+		return err
+	}
+	me.wal = metricWal
+
+	// sync existing WAL indices
+	rIndex, err := me.wal.FirstIndex()
+	if err != nil {
+		return err
+	}
+	me.rWALIndex.Store(rIndex)
+
+	wIndex, err := me.wal.LastIndex()
+	if err != nil {
+		return err
+	}
+	me.wWALIndex.Store(wIndex)
+	return nil
 }
 
 // PushMetrics calls pushes pdata metrics to GCM, creating metric descriptors if necessary.
@@ -272,37 +326,25 @@ func (me *MetricsExporter) PushMetrics(ctx context.Context, m pmetric.Metrics) e
 			var ts []*monitoringpb.TimeSeries
 			ts, projectTS = projectTS[:sendSize], projectTS[sendSize:]
 
-			var err error
 			req := &monitoringpb.CreateTimeSeriesRequest{
 				Name:       projectName(projectID),
 				TimeSeries: ts,
 			}
-			if me.cfg.MetricConfig.CreateServiceTimeSeries {
-				err = me.createServiceTimeSeries(ctx, req)
-			} else {
-				err = me.createTimeSeries(ctx, req)
-			}
 
-			var st string
-			s := status.Convert(err)
-			st = statusCodeToString(s)
-
-			succeededPoints := len(ts)
-			failedPoints := 0
-			for _, detail := range s.Details() {
-				if summary, ok := detail.(*monitoringpb.CreateTimeSeriesSummary); ok {
-					failedPoints = int(summary.TotalPointCount - summary.SuccessPointCount)
-					succeededPoints = int(summary.SuccessPointCount)
+			if me.wal != nil {
+				// push request onto the WAL
+				bytes, err := proto.Marshal(req)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("failed to marshal protobuf to bytes: %+v", err))
+					continue
 				}
-			}
-
-			// always record the number of successful points
-			recordPointCountDataPoint(ctx, succeededPoints, "OK")
-			if failedPoints > 0 {
-				recordPointCountDataPoint(ctx, failedPoints, st)
-			}
-			if err != nil {
-				errs = append(errs, fmt.Errorf("failed to export time series to GCM: %+v", s))
+				me.wal.Write(me.wWALIndex.Add(1), bytes)
+			} else {
+				// otherwise export directly
+				err := me.export(ctx, req)
+				if err != nil {
+					errs = append(errs, err)
+				}
 			}
 		}
 	}
@@ -310,6 +352,168 @@ func (me *MetricsExporter) PushMetrics(ctx context.Context, m pmetric.Metrics) e
 		return multierr.Combine(errs...)
 	}
 	return nil
+}
+
+func (me *MetricsExporter) export(ctx context.Context, req *monitoringpb.CreateTimeSeriesRequest) error {
+	var err error
+	if me.cfg.MetricConfig.CreateServiceTimeSeries {
+		err = me.createServiceTimeSeries(ctx, req)
+	} else {
+		err = me.createTimeSeries(ctx, req)
+	}
+
+	var st string
+	s := status.Convert(err)
+	st = statusCodeToString(s)
+
+	succeededPoints := len(req.TimeSeries)
+	failedPoints := 0
+	for _, detail := range s.Details() {
+		if summary, ok := detail.(*monitoringpb.CreateTimeSeriesSummary); ok {
+			failedPoints = int(summary.TotalPointCount - summary.SuccessPointCount)
+			succeededPoints = int(summary.SuccessPointCount)
+		}
+	}
+
+	// always record the number of successful points
+	recordPointCountDataPoint(ctx, succeededPoints, "OK")
+	if failedPoints > 0 {
+		recordPointCountDataPoint(ctx, failedPoints, st)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to export time series to GCM: %+v", s)
+	}
+	return err
+}
+
+// readWALAndExport continuously pops CreateTimeSeriesRequest protos from the WAL and
+// tries exporting them. If an export fails due to a network error, it will
+// continually retry the same request until success. Other non-retryable errors
+// drop metrics.
+func (me *MetricsExporter) readWALAndExport(ctx context.Context) error {
+	for {
+		select {
+		case <-me.shutdownC:
+			return nil
+		case <-ctx.Done():
+			return nil
+		default:
+		}
+		bytes, err := me.wal.Read(me.rWALIndex.Load())
+		if err == nil {
+			req := new(monitoringpb.CreateTimeSeriesRequest)
+			if err := proto.Unmarshal(bytes, req); err != nil {
+				return err
+			}
+
+			err = me.export(ctx, req)
+			if err != nil {
+				me.obs.log.Warn(fmt.Sprintf("error exporting to GCM: %+v", err))
+			}
+			// retry at same read index if retryable (network) error
+			s := status.Convert(err)
+			if s.Code() == codes.DeadlineExceeded || s.Code() == codes.Unavailable {
+				me.obs.log.Error("non-retryable error, skipping request")
+				continue
+			}
+
+			err = me.wal.TruncateFront(me.rWALIndex.Load())
+			if err != nil {
+				return err
+			}
+			// move read index forward if non retryable error (or exported successfully)
+			me.rWALIndex.Add(1)
+			continue
+		}
+
+		// ErrNotFound from wal.Read() means the index is either 0 or out of
+		// bounds (indicating we're probably at the end of the WAL). That error
+		// will trigger a file watch for new writes (below this). For other
+		// errors, fail.
+		if !errors.Is(err, wal.ErrNotFound) {
+			return err
+		}
+
+		// Must have been ErrNotFound, start a file watch and block waiting for updates.
+		if err := me.watchWAL(ctx); err != nil {
+			return err
+		}
+	}
+}
+
+// watchWAL watches the WAL directory for a write then returns to the
+// continuallyPopWAL() loop.
+func (me *MetricsExporter) watchWAL(ctx context.Context) error {
+	walWatcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return err
+	}
+	err = walWatcher.Add(me.walPath)
+	if err != nil {
+		return err
+	}
+
+	watchCh := make(chan error)
+	var wErr error
+	go func() {
+		defer func() {
+			watchCh <- wErr
+			close(watchCh)
+			walWatcher.Close()
+		}()
+
+		select {
+		case <-me.shutdownC:
+			return
+		case <-ctx.Done():
+			wErr = ctx.Err()
+			return
+
+		case event, ok := <-walWatcher.Events:
+			if !ok {
+				return
+			}
+			switch event.Op {
+			case fsnotify.Remove:
+				me.obs.log.Error("WAL file deleted")
+			case fsnotify.Rename:
+				me.obs.log.Error("WAL file renamed")
+			case fsnotify.Write:
+				wErr = nil
+			}
+
+		case eerr, ok := <-walWatcher.Errors:
+			if ok {
+				wErr = eerr
+			}
+		}
+	}()
+	err = <-watchCh
+	return err
+}
+
+func (me *MetricsExporter) walRunner(ctx context.Context) {
+	defer me.goroutines.Done()
+	for {
+		select {
+		case <-me.shutdownC:
+			// do one last final sync/read/export then return
+			err := me.wal.Sync()
+			if err != nil {
+				me.obs.log.Error(fmt.Sprintf("error syncing WAL: %+v", err))
+			}
+			err = me.readWALAndExport(ctx)
+			if err != nil {
+				me.obs.log.Error(fmt.Sprintf("error reading WAL and exporting: %+v", err))
+			}
+			return
+		default:
+			err := me.readWALAndExport(ctx)
+			if err != nil {
+				me.obs.log.Error(fmt.Sprintf("error reading WAL and exporting: %+v", err))
+			}
+		}
+	}
 }
 
 // Reads metric descriptors from the md channel, and reports them (once) to GCM.

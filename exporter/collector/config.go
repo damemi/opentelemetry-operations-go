@@ -113,6 +113,7 @@ type MetricConfig struct {
 	// service_resource_labels option operates independently from resource_filters.
 	ResourceFilters []ResourceFilter `mapstructure:"resource_filters"`
 	ClientConfig    ClientConfig     `mapstructure:",squash"`
+	WALConfig WALConfig `mapstructure:"wal_config"`
 	// CreateMetricDescriptorBufferSize is the buffer size for the channel
 	// which asynchronously calls CreateMetricDescriptor. Default is 10.
 	CreateMetricDescriptorBufferSize int  `mapstructure:"create_metric_descriptor_buffer_size"`
@@ -138,6 +139,18 @@ type MetricConfig struct {
 	// deviation.  It isn't correct, so we don't send it by default, and don't expose
 	// it to users. For some uses, it is expected, however.
 	EnableSumOfSquaredDeviation bool `mapstructure:"sum_of_squared_deviation"`
+}
+
+// WALConfig defines settings for the write ahead log. WAL buffering writes data
+// points in-order to disk before reading and exporting them. This allows for
+// better retry logic when exporting fails (such as a network outage), because
+// it preserves both the data on disk and the order of the data points.
+type WALConfig struct {
+	// Enabled turns the WAL on or off. When false, the exporter will not use
+	// the WAL and will instead attempt to send data directly to Google Cloud.
+	Enabled bool `mapstructure:"enabled"`
+	// Directory is the location to store WAL files.
+	Directory string `mapstructure:"directory"`
 }
 
 // ImpersonateConfig defines configuration for service account impersonation.

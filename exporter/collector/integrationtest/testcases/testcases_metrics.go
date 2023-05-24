@@ -237,6 +237,7 @@ var MetricsTestCases = []TestCase{
 			cfg.MetricConfig.WALConfig.Enabled = true
 			cfg.MetricConfig.WALConfig.Directory = "./"
 		},
+		SkipForSDK: true,
 	},
 	// TODO: Add integration tests for workload.googleapis.com metrics from the ops agent
 }

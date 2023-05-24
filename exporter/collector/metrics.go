@@ -71,14 +71,22 @@ type selfObservability struct {
 
 // MetricsExporter is the GCM exporter that uses pdata directly.
 type MetricsExporter struct {
-	// A channel that receives metric descriptor and sends them to GCM once
-	metricDescriptorC chan *monitoringpb.CreateMetricDescriptorRequest
-	client            *monitoring.MetricClient
-	obs               selfObservability
+	// write ahead log handles exporter retries in-order to handle network outages
+	wal    *wal.Log
+	client *monitoring.MetricClient
+	obs    selfObservability
 	// shutdownC is a channel for signaling a graceful shutdown
 	shutdownC chan struct{}
 	// mdCache tracks the metric descriptors that have already been sent to GCM
 	mdCache map[string]*monitoringpb.CreateMetricDescriptorRequest
+	// A channel that receives metric descriptor and sends them to GCM once
+	metricDescriptorC chan *monitoringpb.CreateMetricDescriptorRequest
+	// the "write" index for WAL
+	wWALIndex *atomic.Uint64
+	// the "read" index for WAL
+	rWALIndex *atomic.Uint64
+	// the full path of the WAL (user-configured directory + "gcp_metrics_wal")
+	walPath string
 	// requestOpts applies options to the context for requests, such as additional headers.
 	requestOpts []func(*context.Context, requestInfo)
 	mapper      metricMapper
@@ -86,11 +94,6 @@ type MetricsExporter struct {
 	// goroutines tracks the currently running child tasks
 	goroutines sync.WaitGroup
 	timeout    time.Duration
-	// write ahead log handles exporter retries in-order to handle network outages
-	wal       *wal.Log
-	walPath   string
-	rWALIndex *atomic.Uint64
-	wWALIndex *atomic.Uint64
 }
 
 // requestInfo is meant to abstract info from CreateMetricsDescriptorRequests and

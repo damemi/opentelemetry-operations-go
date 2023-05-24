@@ -46,8 +46,8 @@ type Config struct {
 	ProjectID               string            `mapstructure:"project"`
 	UserAgent               string            `mapstructure:"user_agent"`
 	ImpersonateConfig       ImpersonateConfig `mapstructure:"impersonate"`
-	LogConfig               LogConfig         `mapstructure:"log"`
 	TraceConfig             TraceConfig       `mapstructure:"trace"`
+	LogConfig               LogConfig         `mapstructure:"log"`
 	MetricConfig            MetricConfig      `mapstructure:"metric"`
 	DestinationProjectQuota bool              `mapstructure:"destination_project_quota"`
 }
@@ -90,11 +90,6 @@ type AttributeMapping struct {
 }
 
 type MetricConfig struct {
-	// GetMetricName is not settable in config files, but can be used by other
-	// exporters which extend the functionality of this exporter. It allows
-	// customizing the naming of metrics. baseName already includes type
-	// suffixes for summary metrics, but does not (yet) include the domain prefix
-	GetMetricName func(baseName string, metric pmetric.Metric) (string, error)
 	// MapMonitoredResource is not exposed as an option in the configuration, but
 	// can be used by other exporters to extend the functionality of this
 	// exporter. It allows overriding the function used to map otel resource to
@@ -103,7 +98,14 @@ type MetricConfig struct {
 	// ExtraMetrics is an extension point for exporters to add to the set
 	// of ResourceMetrics during a call to PushMetrics.
 	ExtraMetrics func(pmetric.Metrics) pmetric.ResourceMetricsSlice
-	Prefix       string `mapstructure:"prefix"`
+	// GetMetricName is not settable in config files, but can be used by other
+	// exporters which extend the functionality of this exporter. It allows
+	// customizing the naming of metrics. baseName already includes type
+	// suffixes for summary metrics, but does not (yet) include the domain prefix
+	GetMetricName func(baseName string, metric pmetric.Metric) (string, error)
+	// WALConfig holds configuration settings for the write ahead log.
+	WALConfig WALConfig `mapstructure:"wal_config"`
+	Prefix    string    `mapstructure:"prefix"`
 	// KnownDomains contains a list of prefixes. If a metric already has one
 	// of these prefixes, the prefix is not added.
 	KnownDomains []string `mapstructure:"known_domains"`
@@ -113,7 +115,6 @@ type MetricConfig struct {
 	// service_resource_labels option operates independently from resource_filters.
 	ResourceFilters []ResourceFilter `mapstructure:"resource_filters"`
 	ClientConfig    ClientConfig     `mapstructure:",squash"`
-	WALConfig WALConfig `mapstructure:"wal_config"`
 	// CreateMetricDescriptorBufferSize is the buffer size for the channel
 	// which asynchronously calls CreateMetricDescriptor. Default is 10.
 	CreateMetricDescriptorBufferSize int  `mapstructure:"create_metric_descriptor_buffer_size"`
@@ -146,11 +147,11 @@ type MetricConfig struct {
 // better retry logic when exporting fails (such as a network outage), because
 // it preserves both the data on disk and the order of the data points.
 type WALConfig struct {
+	// Directory is the location to store WAL files.
+	Directory string `mapstructure:"directory"`
 	// Enabled turns the WAL on or off. When false, the exporter will not use
 	// the WAL and will instead attempt to send data directly to Google Cloud.
 	Enabled bool `mapstructure:"enabled"`
-	// Directory is the location to store WAL files.
-	Directory string `mapstructure:"directory"`
 }
 
 // ImpersonateConfig defines configuration for service account impersonation.

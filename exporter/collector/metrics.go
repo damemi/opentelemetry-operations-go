@@ -341,7 +341,11 @@ func (me *MetricsExporter) PushMetrics(ctx context.Context, m pmetric.Metrics) e
 					errs = append(errs, fmt.Errorf("failed to marshal protobuf to bytes: %+v", err))
 					continue
 				}
-				me.wal.Write(me.wWALIndex.Add(1), bytes)
+				err = me.wal.Write(me.wWALIndex.Add(1), bytes)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("failed to write to WAL: %+v", err))
+					continue
+				}
 			} else {
 				// otherwise export directly
 				err := me.export(ctx, req)
@@ -405,7 +409,7 @@ func (me *MetricsExporter) readWALAndExport(ctx context.Context) error {
 		bytes, err := me.wal.Read(me.rWALIndex.Load())
 		if err == nil {
 			req := new(monitoringpb.CreateTimeSeriesRequest)
-			if err := proto.Unmarshal(bytes, req); err != nil {
+			if err = proto.Unmarshal(bytes, req); err != nil {
 				return err
 			}
 

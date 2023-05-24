@@ -230,7 +230,7 @@ var MetricsTestCases = []TestCase{
 		},
 	},
 	{
-		Name: "Write ahead log enabled",
+		Name:                 "Write ahead log enabled",
 		OTLPInputFixturePath: "testdata/fixtures/metrics/basic_counter_metrics.json",
 		ExpectFixturePath:    "testdata/fixtures/metrics/basic_counter_metrics_wal_expect.json",
 		ConfigureCollector: func(cfg *collector.Config) {

@@ -406,7 +406,11 @@ func (me *MetricsExporter) readWALAndExport(ctx context.Context) error {
 			return nil
 		default:
 		}
-		bytes, err := me.wal.Read(me.rWALIndex.Load())
+		index := me.rWALIndex.Load()
+		if index <= 0 {
+			index = 1
+		}
+		bytes, err := me.wal.Read(index)
 		if err == nil {
 			req := new(monitoringpb.CreateTimeSeriesRequest)
 			if err = proto.Unmarshal(bytes, req); err != nil {
@@ -420,16 +424,16 @@ func (me *MetricsExporter) readWALAndExport(ctx context.Context) error {
 			// retry at same read index if retryable (network) error
 			s := status.Convert(err)
 			if s.Code() == codes.DeadlineExceeded || s.Code() == codes.Unavailable {
-				me.obs.log.Error("non-retryable error, skipping request")
+				me.obs.log.Error("retryable error, retrying request")
 				continue
 			}
 
-			err = me.wal.TruncateFront(me.rWALIndex.Load())
-			if err != nil {
-				return err
-			}
 			// move read index forward if non retryable error (or exported successfully)
 			me.rWALIndex.Add(1)
+			err = me.wal.TruncateFront(index)
+			if err != nil && !errors.Is(err, wal.ErrOutOfRange) {
+				return err
+			}
 			continue
 		}
 
@@ -451,6 +455,8 @@ func (me *MetricsExporter) readWALAndExport(ctx context.Context) error {
 // watchWAL watches the WAL directory for a write then returns to the
 // continuallyPopWAL() loop.
 func (me *MetricsExporter) watchWAL(ctx context.Context) error {
+	me.goroutines.Add(1)
+	defer me.goroutines.Done()
 	walWatcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return err
@@ -501,22 +507,27 @@ func (me *MetricsExporter) watchWAL(ctx context.Context) error {
 
 func (me *MetricsExporter) walRunner(ctx context.Context) {
 	defer me.goroutines.Done()
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	for {
 		select {
 		case <-me.shutdownC:
 			// do one last final sync/read/export then return
-			err := me.wal.Sync()
-			if err != nil {
-				me.obs.log.Error(fmt.Sprintf("error syncing WAL: %+v", err))
-			}
-			err = me.readWALAndExport(ctx)
-			if err != nil {
-				me.obs.log.Error(fmt.Sprintf("error reading WAL and exporting: %+v", err))
-			}
+			/*
+				err := me.wal.Sync()
+				if err != nil {
+					me.obs.log.Error(fmt.Sprintf("error syncing WAL: %+v", err))
+				}
+				err = me.readWALAndExport(runCtx)
+				if err != nil {
+					me.obs.log.Error(fmt.Sprintf("error reading WAL and exporting: %+v", err))
+				}
+			*/
 			return
 		default:
-			err := me.readWALAndExport(ctx)
+			err := me.readWALAndExport(runCtx)
 			if err != nil {
+				fmt.Printf("ERROR: %+v\n\n", err)
 				me.obs.log.Error(fmt.Sprintf("error reading WAL and exporting: %+v", err))
 			}
 		}

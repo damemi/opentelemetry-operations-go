@@ -223,6 +223,10 @@ release: prepare-release check-clean-work-tree
 	go run tools/release.go tag
 
 .PHONY: fixtures
-fixtures:
+fixtures: clean
 	cd ./exporter/collector/integrationtest && \
 	go run cmd/recordfixtures/main.go
+
+.PHONY: clean
+clean:
+	rm -rf ./exporter/collector/integrationtest/gcp_metrics_wal

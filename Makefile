@@ -223,7 +223,7 @@ release: prepare-release check-clean-work-tree
 	go run tools/release.go tag
 
 .PHONY: fixtures
-fixtures: clean
+fixtures:
 	cd ./exporter/collector/integrationtest && \
 	go run cmd/recordfixtures/main.go
 

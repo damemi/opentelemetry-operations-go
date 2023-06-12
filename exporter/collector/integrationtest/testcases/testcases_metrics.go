@@ -240,5 +240,16 @@ var MetricsTestCases = []TestCase{
 		},
 		SkipForSDK: true,
 	},
+	{
+		Name:                 "Write ahead log enabled, basic prometheus metrics",
+		OTLPInputFixturePath: "testdata/fixtures/metrics/basic_prometheus_metrics.json",
+		ExpectFixturePath:    "testdata/fixtures/metrics/basic_prometheus_metrics_wal_expect.json",
+		CompareFixturePath:   "testdata/fixtures/metrics/basic_prometheus_metrics_expect.json",
+		ConfigureCollector: func(cfg *collector.Config) {
+			cfg.MetricConfig.WALConfig.Enabled = true
+			cfg.MetricConfig.WALConfig.Directory = "./"
+		},
+		SkipForSDK: true,
+	},
 	// TODO: Add integration tests for workload.googleapis.com metrics from the ops agent
 }

@@ -233,6 +233,7 @@ var MetricsTestCases = []TestCase{
 		Name:                 "Write ahead log enabled",
 		OTLPInputFixturePath: "testdata/fixtures/metrics/basic_counter_metrics.json",
 		ExpectFixturePath:    "testdata/fixtures/metrics/basic_counter_metrics_wal_expect.json",
+		CompareFixturePath:   "testdata/fixtures/metrics/basic_counter_metrics_expect.json",
 		ConfigureCollector: func(cfg *collector.Config) {
 			cfg.MetricConfig.WALConfig.Enabled = true
 			cfg.MetricConfig.WALConfig.Directory = "./"

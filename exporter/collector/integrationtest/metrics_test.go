@@ -16,7 +16,6 @@ package integrationtest
 
 import (
 	"context"
-	"sort"
 	"testing"
 	"time"
 
@@ -64,23 +63,13 @@ func TestCollectorMetrics(t *testing.T) {
 			}
 			require.NoError(t, testServerExporter.Shutdown(ctx))
 
-			expectFixture := test.LoadMetricExpectFixture(
+			expectFixture := test.LoadMetricFixture(
 				t,
+				test.ExpectFixturePath,
 				startTime,
 				endTime,
 			)
-			sort.Slice(expectFixture.CreateTimeSeriesRequests, func(i, j int) bool {
-				return expectFixture.CreateTimeSeriesRequests[i].Name < expectFixture.CreateTimeSeriesRequests[j].Name
-			})
-			sort.Slice(expectFixture.CreateMetricDescriptorRequests, func(i, j int) bool {
-				if expectFixture.CreateMetricDescriptorRequests[i].Name != expectFixture.CreateMetricDescriptorRequests[j].Name {
-					return expectFixture.CreateMetricDescriptorRequests[i].Name < expectFixture.CreateMetricDescriptorRequests[j].Name
-				}
-				return expectFixture.CreateMetricDescriptorRequests[i].MetricDescriptor.Name < expectFixture.CreateMetricDescriptorRequests[j].MetricDescriptor.Name
-			})
-			sort.Slice(expectFixture.CreateServiceTimeSeriesRequests, func(i, j int) bool {
-				return expectFixture.CreateServiceTimeSeriesRequests[i].Name < expectFixture.CreateServiceTimeSeriesRequests[j].Name
-			})
+			SortMetricFixture(expectFixture)
 
 			selfObsMetrics, err := inMemoryOCExporter.Proto(ctx)
 			require.NoError(t, err)
@@ -90,18 +79,8 @@ func TestCollectorMetrics(t *testing.T) {
 				CreateServiceTimeSeriesRequests: testServer.CreateServiceTimeSeriesRequests(),
 				SelfObservabilityMetrics:        selfObsMetrics,
 			}
-			sort.Slice(fixture.CreateTimeSeriesRequests, func(i, j int) bool {
-				return fixture.CreateTimeSeriesRequests[i].Name < fixture.CreateTimeSeriesRequests[j].Name
-			})
-			sort.Slice(fixture.CreateMetricDescriptorRequests, func(i, j int) bool {
-				if fixture.CreateMetricDescriptorRequests[i].Name != fixture.CreateMetricDescriptorRequests[j].Name {
-					return fixture.CreateMetricDescriptorRequests[i].Name < fixture.CreateMetricDescriptorRequests[j].Name
-				}
-				return fixture.CreateMetricDescriptorRequests[i].MetricDescriptor.Name < fixture.CreateMetricDescriptorRequests[j].MetricDescriptor.Name
-			})
-			sort.Slice(fixture.CreateServiceTimeSeriesRequests, func(i, j int) bool {
-				return fixture.CreateServiceTimeSeriesRequests[i].Name < fixture.CreateServiceTimeSeriesRequests[j].Name
-			})
+			SortMetricFixture(fixture)
+
 			diff := DiffMetricProtos(
 				t,
 				fixture,
@@ -113,6 +92,28 @@ func TestCollectorMetrics(t *testing.T) {
 					"Expected requests fixture and actual GCM requests differ",
 					diff,
 				)
+			}
+
+			if len(test.CompareFixturePath) > 0 {
+				compareFixture := test.LoadMetricFixture(
+					t,
+					test.CompareFixturePath,
+					startTime,
+					endTime,
+				)
+				SortMetricFixture(compareFixture)
+				diff := DiffMetricProtos(
+					t,
+					fixture,
+					compareFixture,
+				)
+				if diff != "" {
+					require.Fail(
+						t,
+						"Expected requests fixture and actual GCM requests differ",
+						diff,
+					)
+				}
 			}
 		})
 	}
@@ -158,23 +159,13 @@ func TestSDKMetrics(t *testing.T) {
 			}
 			require.NoError(t, testServerExporter.Shutdown(ctx))
 
-			expectFixture := test.LoadMetricExpectFixture(
+			expectFixture := test.LoadMetricFixture(
 				t,
+				test.ExpectFixturePath,
 				startTime,
 				endTime,
 			)
-			sort.Slice(expectFixture.CreateTimeSeriesRequests, func(i, j int) bool {
-				return expectFixture.CreateTimeSeriesRequests[i].Name < expectFixture.CreateTimeSeriesRequests[j].Name
-			})
-			sort.Slice(expectFixture.CreateMetricDescriptorRequests, func(i, j int) bool {
-				if expectFixture.CreateMetricDescriptorRequests[i].Name != expectFixture.CreateMetricDescriptorRequests[j].Name {
-					return expectFixture.CreateMetricDescriptorRequests[i].Name < expectFixture.CreateMetricDescriptorRequests[j].Name
-				}
-				return expectFixture.CreateMetricDescriptorRequests[i].MetricDescriptor.Name < expectFixture.CreateMetricDescriptorRequests[j].MetricDescriptor.Name
-			})
-			sort.Slice(expectFixture.CreateServiceTimeSeriesRequests, func(i, j int) bool {
-				return expectFixture.CreateServiceTimeSeriesRequests[i].Name < expectFixture.CreateServiceTimeSeriesRequests[j].Name
-			})
+			SortMetricFixture(expectFixture)
 
 			// Do not test self-observability metrics with SDK exporters
 			expectFixture.SelfObservabilityMetrics = nil
@@ -185,18 +176,8 @@ func TestSDKMetrics(t *testing.T) {
 				CreateServiceTimeSeriesRequests: testServer.CreateServiceTimeSeriesRequests(),
 				// Do not test self-observability metrics with SDK exporters
 			}
-			sort.Slice(fixture.CreateTimeSeriesRequests, func(i, j int) bool {
-				return fixture.CreateTimeSeriesRequests[i].Name < fixture.CreateTimeSeriesRequests[j].Name
-			})
-			sort.Slice(fixture.CreateMetricDescriptorRequests, func(i, j int) bool {
-				if fixture.CreateMetricDescriptorRequests[i].Name != fixture.CreateMetricDescriptorRequests[j].Name {
-					return fixture.CreateMetricDescriptorRequests[i].Name < fixture.CreateMetricDescriptorRequests[j].Name
-				}
-				return fixture.CreateMetricDescriptorRequests[i].MetricDescriptor.Name < fixture.CreateMetricDescriptorRequests[j].MetricDescriptor.Name
-			})
-			sort.Slice(fixture.CreateServiceTimeSeriesRequests, func(i, j int) bool {
-				return fixture.CreateServiceTimeSeriesRequests[i].Name < fixture.CreateServiceTimeSeriesRequests[j].Name
-			})
+			SortMetricFixture(fixture)
+
 			diff := DiffMetricProtos(
 				t,
 				fixture,
@@ -208,6 +189,28 @@ func TestSDKMetrics(t *testing.T) {
 					"Expected requests fixture and actual GCM requests differ",
 					diff,
 				)
+			}
+
+			if len(test.CompareFixturePath) > 0 {
+				compareFixture := test.LoadMetricFixture(
+					t,
+					test.CompareFixturePath,
+					startTime,
+					endTime,
+				)
+				SortMetricFixture(compareFixture)
+				diff := DiffMetricProtos(
+					t,
+					fixture,
+					compareFixture,
+				)
+				if diff != "" {
+					require.Fail(
+						t,
+						"Expected requests fixture and actual GCM requests differ",
+						diff,
+					)
+				}
 			}
 		})
 	}

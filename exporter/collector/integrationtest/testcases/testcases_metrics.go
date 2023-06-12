@@ -252,5 +252,29 @@ var MetricsTestCases = []TestCase{
 		},
 		SkipForSDK: true,
 	},
+	{
+		Name:                 "Write ahead log enabled, basic Counter with unavailable return code",
+		OTLPInputFixturePath: "testdata/fixtures/metrics/basic_counter_metrics.json",
+		ExpectFixturePath:    "testdata/fixtures/metrics/basic_counter_metrics_wal_unavailable_expect.json",
+		ConfigureCollector: func(cfg *collector.Config) {
+			cfg.ProjectID = "unavailableproject"
+			cfg.MetricConfig.WALConfig.Enabled = true
+			cfg.MetricConfig.WALConfig.Directory, _ = os.MkdirTemp("", "test-wal-")
+		},
+		SkipForSDK:    true,
+		ExpectRetries: true,
+	},
+	{
+		Name:                 "Write ahead log enabled, basic Counter with deadline_exceeded return code",
+		OTLPInputFixturePath: "testdata/fixtures/metrics/basic_counter_metrics.json",
+		ExpectFixturePath:    "testdata/fixtures/metrics/basic_counter_metrics_wal_deadline_expect.json",
+		ConfigureCollector: func(cfg *collector.Config) {
+			cfg.ProjectID = "deadline_exceededproject"
+			cfg.MetricConfig.WALConfig.Enabled = true
+			cfg.MetricConfig.WALConfig.Directory, _ = os.MkdirTemp("", "test-wal-")
+		},
+		SkipForSDK:    true,
+		ExpectRetries: true,
+	},
 	// TODO: Add integration tests for workload.googleapis.com metrics from the ops agent
 }

@@ -36,6 +36,7 @@ type MetricsTestServer struct {
 	createTimeSeriesReqs        []*monitoringpb.CreateTimeSeriesRequest
 	createServiceTimeSeriesReqs []*monitoringpb.CreateTimeSeriesRequest
 	mu                          sync.Mutex
+	RetryCount                  int
 }
 
 func (m *MetricsTestServer) Shutdown() {
@@ -104,10 +105,16 @@ func (f *fakeMetricServiceServer) CreateTimeSeries(
 	var code codes.Code
 	if strings.Contains(req.Name, "notfound") {
 		code = codes.NotFound
+	} else if strings.Contains(req.Name, "unavailable") {
+		f.metricsTestServer.RetryCount++
+		code = codes.Unavailable
+	} else if strings.Contains(req.Name, "deadline_exceeded") {
+		f.metricsTestServer.RetryCount++
+		code = codes.DeadlineExceeded
 	}
 
 	statusResp := status.New(code, "FORCED_TEST_ERROR")
-	if code == codes.NotFound {
+	if code == codes.NotFound || code == codes.Unavailable || code == codes.DeadlineExceeded {
 		statusResp, _ = statusResp.WithDetails(&monitoringpb.CreateTimeSeriesSummary{
 			TotalPointCount:   int32(len(req.TimeSeries)),
 			SuccessPointCount: 0,

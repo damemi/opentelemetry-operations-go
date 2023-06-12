@@ -78,6 +78,8 @@ type TestCase struct {
 	SkipForSDK bool
 	// ExpectErr sets whether the test is expected to fail
 	ExpectErr bool
+	// ExpectRetries sets whether the test expects the server to report multiple attempts
+	ExpectRetries bool
 }
 
 func (tc *TestCase) LoadOTLPTracesInput(

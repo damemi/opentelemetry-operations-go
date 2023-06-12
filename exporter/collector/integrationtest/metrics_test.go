@@ -63,6 +63,12 @@ func TestCollectorMetrics(t *testing.T) {
 			}
 			require.NoError(t, testServerExporter.Shutdown(ctx))
 
+			if !test.ExpectRetries {
+				require.Zero(t, testServer.RetryCount, "Server returned >0 retries when not expected")
+			} else {
+				require.NotZero(t, testServer.RetryCount, "Server returned 0 retries when expected >0")
+			}
+
 			expectFixture := test.LoadMetricFixture(
 				t,
 				test.ExpectFixturePath,

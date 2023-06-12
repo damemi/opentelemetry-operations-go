@@ -17,6 +17,7 @@ package testcases
 import (
 	"os"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/otel/attribute"
@@ -238,6 +239,7 @@ var MetricsTestCases = []TestCase{
 		ConfigureCollector: func(cfg *collector.Config) {
 			cfg.MetricConfig.WALConfig.Enabled = true
 			cfg.MetricConfig.WALConfig.Directory, _ = os.MkdirTemp("", "test-wal-")
+			cfg.MetricConfig.WALConfig.MaxBackoff = time.Duration(1 * time.Second)
 		},
 		SkipForSDK: true,
 	},
@@ -249,6 +251,7 @@ var MetricsTestCases = []TestCase{
 		ConfigureCollector: func(cfg *collector.Config) {
 			cfg.MetricConfig.WALConfig.Enabled = true
 			cfg.MetricConfig.WALConfig.Directory, _ = os.MkdirTemp("", "test-wal-")
+			cfg.MetricConfig.WALConfig.MaxBackoff = time.Duration(1 * time.Second)
 		},
 		SkipForSDK: true,
 	},
@@ -260,6 +263,7 @@ var MetricsTestCases = []TestCase{
 			cfg.ProjectID = "unavailableproject"
 			cfg.MetricConfig.WALConfig.Enabled = true
 			cfg.MetricConfig.WALConfig.Directory, _ = os.MkdirTemp("", "test-wal-")
+			cfg.MetricConfig.WALConfig.MaxBackoff = time.Duration(1 * time.Second)
 		},
 		SkipForSDK:    true,
 		ExpectRetries: true,
@@ -272,6 +276,7 @@ var MetricsTestCases = []TestCase{
 			cfg.ProjectID = "deadline_exceededproject"
 			cfg.MetricConfig.WALConfig.Enabled = true
 			cfg.MetricConfig.WALConfig.Directory, _ = os.MkdirTemp("", "test-wal-")
+			cfg.MetricConfig.WALConfig.MaxBackoff = time.Duration(1 * time.Second)
 		},
 		SkipForSDK:    true,
 		ExpectRetries: true,

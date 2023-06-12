@@ -149,6 +149,8 @@ type MetricConfig struct {
 type WALConfig struct {
 	// Directory is the location to store WAL files.
 	Directory string `mapstructure:"directory"`
+	// MaxBackoff sets the length of time to exponentially re-try failed exports.
+	MaxBackoff time.Duration `mapstructure:"max_backoff"`
 	// Enabled turns the WAL on or off. When false, the exporter will not use
 	// the WAL and will instead attempt to send data directly to Google Cloud.
 	Enabled bool `mapstructure:"enabled"`

@@ -15,6 +15,7 @@
 package testcases
 
 import (
+	"os"
 	"strings"
 
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -236,7 +237,7 @@ var MetricsTestCases = []TestCase{
 		CompareFixturePath:   "testdata/fixtures/metrics/basic_counter_metrics_expect.json",
 		ConfigureCollector: func(cfg *collector.Config) {
 			cfg.MetricConfig.WALConfig.Enabled = true
-			cfg.MetricConfig.WALConfig.Directory = "./"
+			cfg.MetricConfig.WALConfig.Directory, _ = os.MkdirTemp("", "test-wal-")
 		},
 		SkipForSDK: true,
 	},
@@ -247,7 +248,7 @@ var MetricsTestCases = []TestCase{
 		CompareFixturePath:   "testdata/fixtures/metrics/basic_prometheus_metrics_expect.json",
 		ConfigureCollector: func(cfg *collector.Config) {
 			cfg.MetricConfig.WALConfig.Enabled = true
-			cfg.MetricConfig.WALConfig.Directory = "./"
+			cfg.MetricConfig.WALConfig.Directory, _ = os.MkdirTemp("", "test-wal-")
 		},
 		SkipForSDK: true,
 	},

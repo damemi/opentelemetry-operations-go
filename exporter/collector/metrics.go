@@ -503,7 +503,7 @@ func (me *MetricsExporter) readWALAndExport(ctx context.Context) error {
 			if time.Duration(backoff*int(time.Second)) >= me.wal.maxBackoff {
 				break
 			}
-			time.Sleep(time.Duration(1<<i) * time.Second)
+			time.Sleep(time.Duration(backoff) * time.Second)
 		}
 
 		lastIndex, indexErr := me.wal.LastIndex()

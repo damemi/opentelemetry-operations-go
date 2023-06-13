@@ -161,7 +161,8 @@ func NewMetricTestExporter(
 	exporter, err := collector.NewGoogleCloudMetricsExporter(
 		ctx,
 		cfg,
-		zap.NewNop(),
+		//zap.NewNop(),
+		zap.NewExample(),
 		"latest",
 		collector.DefaultTimeout,
 	)

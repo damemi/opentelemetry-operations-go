@@ -478,6 +478,10 @@ func (me *MetricsExporter) walLoop(ctx context.Context) error {
 func (me *MetricsExporter) readWALAndExport(ctx context.Context) error {
 	me.wal.mutex.Lock()
 	defer me.wal.mutex.Unlock()
+	err := me.setupWAL()
+	if err != nil {
+		return err
+	}
 	fmt.Printf("Reading index %+v\n", me.wal.rIndex.Load())
 	bytes, err := me.wal.Read(me.wal.rIndex.Load())
 	if err == nil {

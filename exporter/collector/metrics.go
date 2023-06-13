@@ -375,6 +375,7 @@ func (me *MetricsExporter) PushMetrics(ctx context.Context, m pmetric.Metrics) e
 					errs = append(errs, fmt.Errorf("failed to marshal protobuf to bytes: %+v", err))
 					continue
 				}
+				fmt.Println("Writing entry to WAL")
 				err = me.wal.Write(me.wal.wIndex.Add(1), bytes)
 				if err != nil {
 					errs = append(errs, fmt.Errorf("failed to write to WAL: %+v", err))
@@ -477,7 +478,7 @@ func (me *MetricsExporter) walLoop(ctx context.Context) error {
 func (me *MetricsExporter) readWALAndExport(ctx context.Context) error {
 	me.wal.mutex.Lock()
 	defer me.wal.mutex.Unlock()
-
+	fmt.Printf("Reading index %+v\n", me.wal.rIndex.Load())
 	bytes, err := me.wal.Read(me.wal.rIndex.Load())
 	if err == nil {
 		req := new(monitoringpb.CreateTimeSeriesRequest)

@@ -237,9 +237,11 @@ var MetricsTestCases = []TestCase{
 		ExpectFixturePath:    "testdata/fixtures/metrics/basic_counter_metrics_wal_expect.json",
 		CompareFixturePath:   "testdata/fixtures/metrics/basic_counter_metrics_expect.json",
 		ConfigureCollector: func(cfg *collector.Config) {
-			cfg.MetricConfig.WALConfig.Enabled = true
-			cfg.MetricConfig.WALConfig.Directory, _ = os.MkdirTemp("", "test-wal-")
-			cfg.MetricConfig.WALConfig.MaxBackoff = time.Duration(1 * time.Second)
+			dir, _ := os.MkdirTemp("", "test-wal-")
+			cfg.MetricConfig.WALConfig = &collector.WALConfig{
+				Directory:  dir,
+				MaxBackoff: time.Duration(1 * time.Second),
+			}
 		},
 		SkipForSDK: true,
 	},
@@ -249,9 +251,11 @@ var MetricsTestCases = []TestCase{
 		ExpectFixturePath:    "testdata/fixtures/metrics/basic_prometheus_metrics_wal_expect.json",
 		CompareFixturePath:   "testdata/fixtures/metrics/basic_prometheus_metrics_expect.json",
 		ConfigureCollector: func(cfg *collector.Config) {
-			cfg.MetricConfig.WALConfig.Enabled = true
-			cfg.MetricConfig.WALConfig.Directory, _ = os.MkdirTemp("", "test-wal-")
-			cfg.MetricConfig.WALConfig.MaxBackoff = time.Duration(1 * time.Second)
+			dir, _ := os.MkdirTemp("", "test-wal-")
+			cfg.MetricConfig.WALConfig = &collector.WALConfig{
+				Directory:  dir,
+				MaxBackoff: time.Duration(1 * time.Second),
+			}
 		},
 		SkipForSDK: true,
 	},
@@ -261,9 +265,11 @@ var MetricsTestCases = []TestCase{
 		ExpectFixturePath:    "testdata/fixtures/metrics/basic_counter_metrics_wal_unavailable_expect.json",
 		ConfigureCollector: func(cfg *collector.Config) {
 			cfg.ProjectID = "unavailableproject"
-			cfg.MetricConfig.WALConfig.Enabled = true
-			cfg.MetricConfig.WALConfig.Directory, _ = os.MkdirTemp("", "test-wal-")
-			cfg.MetricConfig.WALConfig.MaxBackoff = time.Duration(2 * time.Second)
+			dir, _ := os.MkdirTemp("", "test-wal-")
+			cfg.MetricConfig.WALConfig = &collector.WALConfig{
+				Directory:  dir,
+				MaxBackoff: time.Duration(2 * time.Second),
+			}
 		},
 		SkipForSDK:    true,
 		ExpectRetries: true,
@@ -274,9 +280,11 @@ var MetricsTestCases = []TestCase{
 		ExpectFixturePath:    "testdata/fixtures/metrics/basic_counter_metrics_wal_deadline_expect.json",
 		ConfigureCollector: func(cfg *collector.Config) {
 			cfg.ProjectID = "deadline_exceededproject"
-			cfg.MetricConfig.WALConfig.Enabled = true
-			cfg.MetricConfig.WALConfig.Directory, _ = os.MkdirTemp("", "test-wal-")
-			cfg.MetricConfig.WALConfig.MaxBackoff = time.Duration(2 * time.Second)
+			dir, _ := os.MkdirTemp("", "test-wal-")
+			cfg.MetricConfig.WALConfig = &collector.WALConfig{
+				Directory:  dir,
+				MaxBackoff: time.Duration(2 * time.Second),
+			}
 		},
 		SkipForSDK:    true,
 		ExpectRetries: true,

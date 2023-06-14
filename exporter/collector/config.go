@@ -104,8 +104,8 @@ type MetricConfig struct {
 	// suffixes for summary metrics, but does not (yet) include the domain prefix
 	GetMetricName func(baseName string, metric pmetric.Metric) (string, error)
 	// WALConfig holds configuration settings for the write ahead log.
-	WALConfig WALConfig `mapstructure:"wal_config"`
-	Prefix    string    `mapstructure:"prefix"`
+	WALConfig *WALConfig `mapstructure:"wal_config"`
+	Prefix    string     `mapstructure:"prefix"`
 	// KnownDomains contains a list of prefixes. If a metric already has one
 	// of these prefixes, the prefix is not added.
 	KnownDomains []string `mapstructure:"known_domains"`
@@ -151,9 +151,6 @@ type WALConfig struct {
 	Directory string `mapstructure:"directory"`
 	// MaxBackoff sets the length of time to exponentially re-try failed exports.
 	MaxBackoff time.Duration `mapstructure:"max_backoff"`
-	// Enabled turns the WAL on or off. When false, the exporter will not use
-	// the WAL and will instead attempt to send data directly to Google Cloud.
-	Enabled bool `mapstructure:"enabled"`
 }
 
 // ImpersonateConfig defines configuration for service account impersonation.

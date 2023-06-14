@@ -10,4 +10,3 @@ Thumbs.db
 coverage.*
 
 /example/metric/metric
-/exporter/collector/integrationtest/gcp_metrics_wal/

@@ -135,7 +135,7 @@ func (me *MetricsExporter) Shutdown(ctx context.Context) error {
 		// Close the WAL if open
 		if me.wal != nil {
 			if err := me.wal.Close(); err != nil {
-				fmt.Printf("error closing WAL: %+v\n", err)
+				me.obs.log.Error(fmt.Sprintf("error closing WAL: %+v\n", err))
 			}
 		}
 		close(c)
@@ -213,7 +213,7 @@ func NewGoogleCloudMetricsExporter(
 		})
 	}
 
-	if cfg.MetricConfig.WALConfig.Enabled {
+	if cfg.MetricConfig.WALConfig != nil {
 		mExp.wal = &exporterWAL{}
 		_, _, err = mExp.setupWAL()
 		if err != nil {
@@ -409,9 +409,8 @@ func (me *MetricsExporter) export(ctx context.Context, req *monitoringpb.CreateT
 		err = me.createTimeSeries(ctx, req)
 	}
 
-	var st string
 	s := status.Convert(err)
-	st = statusCodeToString(s)
+	st := statusCodeToString(s)
 
 	succeededPoints := len(req.TimeSeries)
 	failedPoints := 0
@@ -579,9 +578,9 @@ func (me *MetricsExporter) watchWALFile(ctx context.Context) error {
 				wErr = nil
 			}
 
-		case eerr, ok := <-walWatcher.Errors:
+		case watchErr, ok := <-walWatcher.Errors:
 			if ok {
-				wErr = eerr
+				wErr = watchErr
 			}
 		}
 	}()

@@ -80,6 +80,7 @@ type MetricsExporter struct {
 	// A channel that receives metric descriptor and sends them to GCM once
 	metricDescriptorC chan *monitoringpb.CreateMetricDescriptorRequest
 	client            *monitoring.MetricClient
+	exportFunc        func(context.Context, *monitoringpb.CreateTimeSeriesRequest) error
 	// requestOpts applies options to the context for requests, such as additional headers.
 	requestOpts []func(*context.Context, requestInfo)
 	mapper      metricMapper
@@ -87,7 +88,6 @@ type MetricsExporter struct {
 	// goroutines tracks the currently running child tasks
 	goroutines sync.WaitGroup
 	timeout    time.Duration
-	exportFunc func(context.Context, *monitoringpb.CreateTimeSeriesRequest) error
 }
 
 type exporterWAL struct {

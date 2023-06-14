@@ -15,6 +15,7 @@
 package collector
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
@@ -31,6 +32,7 @@ import (
 	"google.golang.org/genproto/googleapis/api/label"
 	metricpb "google.golang.org/genproto/googleapis/api/metric"
 	monitoredrespb "google.golang.org/genproto/googleapis/api/monitoredres"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -2084,5 +2086,34 @@ func TestCloseWAL(t *testing.T) {
 
 	// check multiple closes are safe
 	err = mExp.closeWAL()
+	require.NoError(t, err)
+}
+
+func TestReadWALAndExport(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "wal-test-")
+	mExp := &MetricsExporter{
+		cfg: Config{
+			MetricConfig: MetricConfig{
+				WALConfig: &WALConfig{
+					Directory:  tmpDir,
+					MaxBackoff: time.Duration(2112 * time.Second),
+				},
+			},
+		},
+		exportFunc: func(ctx context.Context, req *monitoringpb.CreateTimeSeriesRequest) error {
+			return nil
+		},
+	}
+
+	_, _, err := mExp.setupWAL()
+	require.NoError(t, err)
+
+	req := &monitoringpb.CreateTimeSeriesRequest{Name: "foo"}
+	bytes, err := proto.Marshal(req)
+	require.NoError(t, err)
+	err = mExp.wal.Write(1, bytes)
+	require.NoError(t, err)
+
+	err = mExp.readWALAndExport(context.Background())
 	require.NoError(t, err)
 }

@@ -87,6 +87,7 @@ type MetricsExporter struct {
 	// goroutines tracks the currently running child tasks
 	goroutines sync.WaitGroup
 	timeout    time.Duration
+	exportFunc func(context.Context, *monitoringpb.CreateTimeSeriesRequest) error
 }
 
 type exporterWAL struct {
@@ -205,6 +206,7 @@ func NewGoogleCloudMetricsExporter(
 		shutdownC:         shutdown,
 		timeout:           timeout,
 	}
+	mExp.exportFunc = mExp.export
 
 	mExp.requestOpts = make([]func(*context.Context, requestInfo), 0)
 	if cfg.DestinationProjectQuota {
@@ -491,7 +493,7 @@ func (me *MetricsExporter) readWALAndExport(ctx context.Context) error {
 		// or until user-configured max backoff is hit.
 		backoff := 0
 		for i := 0; i < 12; i++ {
-			err = me.export(ctx, req)
+			err = me.exportFunc(ctx, req)
 			if err != nil {
 				me.obs.log.Warn(fmt.Sprintf("error exporting to GCM: %+v", err))
 			}

@@ -29,7 +29,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -92,10 +91,6 @@ type MetricsExporter struct {
 
 type exporterWAL struct {
 	*wal.Log
-	// the "write" index for WAL
-	wIndex *atomic.Uint64
-	// the "read" index for WAL
-	rIndex *atomic.Uint64
 	// the full path of the WAL (user-configured directory + "gcp_metrics_wal")
 	path       string
 	maxBackoff time.Duration
@@ -220,7 +215,7 @@ func NewGoogleCloudMetricsExporter(
 
 	if cfg.MetricConfig.WALConfig.Enabled {
 		mExp.wal = &exporterWAL{}
-		err = mExp.setupWAL()
+		_, _, err = mExp.setupWAL()
 		if err != nil {
 			return nil, err
 		}
@@ -238,22 +233,20 @@ func NewGoogleCloudMetricsExporter(
 
 // setupWAL creates the WAL.
 // This function is also used to re-sync after writes, so it closes the existing WAL if present.
-func (me *MetricsExporter) setupWAL() error {
+// It returns the FirstIndex, LastIndex, and any error.
+func (me *MetricsExporter) setupWAL() (uint64, uint64, error) {
 	err := me.closeWAL()
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 
 	walPath := filepath.Join(me.cfg.MetricConfig.WALConfig.Directory, "gcp_metrics_wal")
 	me.wal.path = walPath
 	metricWal, err := wal.Open(walPath, &wal.Options{LogFormat: 1})
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	me.wal.Log = metricWal
-
-	me.wal.rIndex = &atomic.Uint64{}
-	me.wal.wIndex = &atomic.Uint64{}
 
 	// default to 1 hour exponential backoff
 	me.wal.maxBackoff = time.Duration(3600 * time.Second)
@@ -264,16 +257,15 @@ func (me *MetricsExporter) setupWAL() error {
 	// sync existing WAL indices
 	rIndex, err := me.wal.FirstIndex()
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
-	me.wal.rIndex.Store(rIndex)
 
 	wIndex, err := me.wal.LastIndex()
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
-	me.wal.wIndex.Store(wIndex)
-	return nil
+
+	return rIndex, wIndex, nil
 }
 
 func (me *MetricsExporter) closeWAL() error {
@@ -375,8 +367,14 @@ func (me *MetricsExporter) PushMetrics(ctx context.Context, m pmetric.Metrics) e
 					errs = append(errs, fmt.Errorf("failed to marshal protobuf to bytes: %+v", err))
 					continue
 				}
-				fmt.Println("Writing entry to WAL")
-				err = me.wal.Write(me.wal.wIndex.Add(1), bytes)
+
+				writeIndex, err := me.wal.LastIndex()
+				if err != nil {
+					errs = append(errs, fmt.Errorf("failed to get LastIndex of WAL: %+v", err))
+					continue
+				}
+
+				err = me.wal.Write(writeIndex+1, bytes)
 				if err != nil {
 					errs = append(errs, fmt.Errorf("failed to write to WAL: %+v", err))
 					continue
@@ -462,11 +460,6 @@ func (me *MetricsExporter) walLoop(ctx context.Context) error {
 		if err := me.watchWALFile(ctx); err != nil {
 			return err
 		}
-
-		// close and re-open the WAL to sync read and write indices
-		if err := me.setupWAL(); err != nil {
-			return err
-		}
 	}
 }
 
@@ -478,12 +471,14 @@ func (me *MetricsExporter) walLoop(ctx context.Context) error {
 func (me *MetricsExporter) readWALAndExport(ctx context.Context) error {
 	me.wal.mutex.Lock()
 	defer me.wal.mutex.Unlock()
-	err := me.setupWAL()
+
+	// close and reopen the WAL to sync indices
+	readIndex, writeIndex, err := me.setupWAL()
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Reading index %+v\n", me.wal.rIndex.Load())
-	bytes, err := me.wal.Read(me.wal.rIndex.Load())
+
+	bytes, err := me.wal.Read(readIndex)
 	if err == nil {
 		req := new(monitoringpb.CreateTimeSeriesRequest)
 		if err = proto.Unmarshal(bytes, req); err != nil {
@@ -515,7 +510,7 @@ func (me *MetricsExporter) readWALAndExport(ctx context.Context) error {
 		if indexErr != nil {
 			return indexErr
 		}
-		if me.wal.rIndex.Load() == lastIndex && len(req.String()) > 0 {
+		if readIndex == lastIndex && len(req.String()) > 0 {
 			// This indicates that we are trying to truncate the last item in the WAL.
 			// If that is the case, write an empty request so we can truncate the last real request
 			// (the WAL library requires at least 1 entry).
@@ -525,14 +520,14 @@ func (me *MetricsExporter) readWALAndExport(ctx context.Context) error {
 			if bytesErr != nil {
 				return bytesErr
 			}
-			err = me.wal.Write(me.wal.wIndex.Add(1), bytes)
+
+			err = me.wal.Write(writeIndex+1, bytes)
 			if err != nil {
 				return err
 			}
 		}
 		// move read index forward if non retryable error (or exported successfully)
-		me.wal.rIndex.Add(1)
-		err = me.wal.TruncateFront(me.wal.rIndex.Load())
+		err = me.wal.TruncateFront(readIndex + 1)
 		if err != nil {
 			return err
 		}

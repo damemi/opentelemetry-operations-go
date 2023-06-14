@@ -504,11 +504,9 @@ func (me *MetricsExporter) readWALAndExport(ctx context.Context) error {
 			}
 			me.obs.log.Error("retryable error, retrying request")
 			backoff = 1 << i
-			fmt.Printf("Raw: %+v Backoff: %+v Duration: %+v Max: %+v\n", backoff, backoff*int(time.Second), (time.Duration(backoff)*time.Second).Seconds(), me.wal.maxBackoff.Seconds())
-			if time.Duration(backoff*int(time.Second)) >= me.wal.maxBackoff {
+			if time.Duration(backoff)*time.Second >= me.wal.maxBackoff {
 				break
 			}
-			fmt.Printf("SLeeping for: %+v\n\n", (time.Duration(backoff) * time.Second).Seconds())
 			time.Sleep(time.Duration(backoff) * time.Second)
 		}
 

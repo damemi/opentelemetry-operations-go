@@ -17,6 +17,7 @@ package collector
 import (
 	"fmt"
 	"math"
+	"os"
 	"testing"
 	"time"
 
@@ -2032,4 +2033,56 @@ func TestInstrumentationScopeToLabelsUTF8(t *testing.T) {
 			assert.Equal(t, out, test.output)
 		})
 	}
+}
+
+func TestSetupWAL(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "wal-test-")
+	mExp := &MetricsExporter{
+		cfg: Config{
+			MetricConfig: MetricConfig{
+				WALConfig: &WALConfig{
+					Directory:  tmpDir,
+					MaxBackoff: time.Duration(2112 * time.Second),
+				},
+			},
+		},
+	}
+	firstIndex, lastIndex, err := mExp.setupWAL()
+	require.NoError(t, err)
+	require.Zero(t, firstIndex)
+	require.Zero(t, lastIndex)
+	require.Equal(t, time.Duration(2112*time.Second), mExp.wal.maxBackoff)
+
+	err = mExp.wal.Write(uint64(1), []byte("foo"))
+	require.NoError(t, err)
+	err = mExp.wal.Write(uint64(2), []byte("bar"))
+	require.NoError(t, err)
+	firstIndex, lastIndex, err = mExp.setupWAL()
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), firstIndex)
+	require.Equal(t, uint64(2), lastIndex)
+	require.Equal(t, time.Duration(2112*time.Second), mExp.wal.maxBackoff)
+}
+
+func TestCloseWAL(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "wal-test-")
+	mExp := &MetricsExporter{
+		cfg: Config{
+			MetricConfig: MetricConfig{
+				WALConfig: &WALConfig{
+					Directory:  tmpDir,
+					MaxBackoff: time.Duration(2112 * time.Second),
+				},
+			},
+		},
+	}
+	_, _, err := mExp.setupWAL()
+	require.NoError(t, err)
+
+	err = mExp.closeWAL()
+	require.NoError(t, err)
+
+	// check multiple closes are safe
+	err = mExp.closeWAL()
+	require.NoError(t, err)
 }

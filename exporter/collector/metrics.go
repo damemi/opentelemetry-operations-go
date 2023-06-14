@@ -214,7 +214,6 @@ func NewGoogleCloudMetricsExporter(
 	}
 
 	if cfg.MetricConfig.WALConfig != nil {
-		mExp.wal = &exporterWAL{}
 		_, _, err = mExp.setupWAL()
 		if err != nil {
 			return nil, err
@@ -238,6 +237,10 @@ func (me *MetricsExporter) setupWAL() (uint64, uint64, error) {
 	err := me.closeWAL()
 	if err != nil {
 		return 0, 0, err
+	}
+
+	if me.wal == nil {
+		me.wal = &exporterWAL{}
 	}
 
 	walPath := filepath.Join(me.cfg.MetricConfig.WALConfig.Directory, "gcp_metrics_wal")

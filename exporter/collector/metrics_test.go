@@ -2201,8 +2201,10 @@ func TestRunWALReadAndExportLoop(t *testing.T) {
 	doneChan := make(chan bool)
 
 	tmpDir, _ := os.MkdirTemp("", "wal-test-")
+	shutdown := make(chan struct{})
 	mExp := &MetricsExporter{
-		obs: selfObservability{zap.NewNop()},
+		obs:       selfObservability{zap.NewNop()},
+		shutdownC: shutdown,
 		cfg: Config{
 			MetricConfig: MetricConfig{
 				WALConfig: &WALConfig{
@@ -2224,7 +2226,7 @@ func TestRunWALReadAndExportLoop(t *testing.T) {
 	_, _, err := mExp.setupWAL()
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx := context.Background()
 	mExp.goroutines.Add(1)
 	go func() {
 		mExp.runWALReadAndExportLoop(ctx)
@@ -2248,6 +2250,6 @@ func TestRunWALReadAndExportLoop(t *testing.T) {
 	// give the loop a second to realize it's at the end of the WAL
 	time.Sleep(time.Duration(1 * time.Second))
 
-	cancel()
+	close(mExp.shutdownC)
 	mExp.goroutines.Wait()
 }

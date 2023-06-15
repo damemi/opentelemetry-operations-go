@@ -2197,9 +2197,12 @@ writeLoop:
 }
 
 func TestRunWALReadAndExportLoop(t *testing.T) {
+	requestsReceived := 0
+	doneChan := make(chan bool)
+
 	tmpDir, _ := os.MkdirTemp("", "wal-test-")
 	mExp := &MetricsExporter{
-		obs: selfObservability{zap.NewExample()},
+		obs: selfObservability{zap.NewNop()},
 		cfg: Config{
 			MetricConfig: MetricConfig{
 				WALConfig: &WALConfig{
@@ -2208,6 +2211,13 @@ func TestRunWALReadAndExportLoop(t *testing.T) {
 			},
 		},
 		exportFunc: func(ctx context.Context, req *monitoringpb.CreateTimeSeriesRequest) error {
+			if len(req.String()) == 0 {
+				return nil
+			}
+			requestsReceived++
+			if requestsReceived == 10 {
+				doneChan <- true
+			}
 			return nil
 		},
 	}
@@ -2220,7 +2230,7 @@ func TestRunWALReadAndExportLoop(t *testing.T) {
 		mExp.runWALReadAndExportLoop(ctx)
 	}()
 
-	for i := 1; i < 10; i++ {
+	for i := 0; i < 10; i++ {
 		mExp.wal.mutex.Lock()
 		req := &monitoringpb.CreateTimeSeriesRequest{Name: "foo"}
 		bytes, err := proto.Marshal(req)
@@ -2232,6 +2242,11 @@ func TestRunWALReadAndExportLoop(t *testing.T) {
 		require.NoError(t, err)
 		mExp.wal.mutex.Unlock()
 	}
+
+	// wait until all requests have been received by the fake exporter
+	<-doneChan
+	// give the loop a second to realize it's at the end of the WAL
+	time.Sleep(time.Duration(1 * time.Second))
 
 	cancel()
 	mExp.goroutines.Wait()

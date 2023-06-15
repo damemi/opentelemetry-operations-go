@@ -437,36 +437,6 @@ func (me *MetricsExporter) export(ctx context.Context, req *monitoringpb.CreateT
 	return err
 }
 
-// walLoop continuously reads from the WAL and exports from it.
-func (me *MetricsExporter) walLoop(ctx context.Context) error {
-	for {
-		select {
-		case <-me.shutdownC:
-			return nil
-		case <-ctx.Done():
-			return nil
-		default:
-		}
-
-		err := me.readWALAndExport(ctx)
-		if err == nil {
-			continue
-		}
-		// ErrNotFound from wal.Read() means the index is either 0 or out of
-		// bounds (indicating we're probably at the end of the WAL). That error
-		// will trigger a file watch for new writes (below this). For other
-		// errors, fail.
-		if !errors.Is(err, wal.ErrNotFound) {
-			return err
-		}
-
-		// Must have been ErrNotFound, start a file watch and block waiting for updates.
-		if err := me.watchWALFile(ctx); err != nil {
-			return err
-		}
-	}
-}
-
 // readWALAndExport pops the next CreateTimeSeriesRequest from the WAL and tries exporting it.
 // If the export is successful (or fails for a non-retryable error), the read index is incremented
 // so the next entry in the WAL can be read by a subsequent call to readWALAndExport().
@@ -576,9 +546,9 @@ func (me *MetricsExporter) watchWALFile(ctx context.Context) error {
 			}
 			switch event.Op {
 			case fsnotify.Remove:
-				me.obs.log.Error("WAL file deleted")
+				wErr = fmt.Errorf("WAL file deleted")
 			case fsnotify.Rename:
-				me.obs.log.Error("WAL file renamed")
+				wErr = fmt.Errorf("WAL file renamed")
 			case fsnotify.Write:
 				wErr = nil
 			}
@@ -599,6 +569,8 @@ func (me *MetricsExporter) runWALReadAndExportLoop(ctx context.Context) {
 	defer cancel()
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case <-me.shutdownC:
 			// do one last final read/export then return
 			// otherwise the runner goroutine could leave some hanging metrics unexported
@@ -613,9 +585,21 @@ func (me *MetricsExporter) runWALReadAndExportLoop(ctx context.Context) {
 			}
 			return
 		default:
-			err := me.walLoop(runCtx)
-			if err != nil {
+			err := me.readWALAndExport(ctx)
+			if err == nil {
+				continue
+			}
+			// ErrNotFound from wal.Read() means the index is either 0 or out of
+			// bounds (indicating we're probably at the end of the WAL). That error
+			// will trigger a file watch for new writes (below this). For other
+			// errors, fail.
+			if !errors.Is(err, wal.ErrNotFound) {
 				me.obs.log.Error(fmt.Sprintf("error reading WAL and exporting: %+v", err))
+			}
+
+			// Must have been ErrNotFound, start a file watch and block waiting for updates.
+			if err = me.watchWALFile(ctx); err != nil {
+				me.obs.log.Error(fmt.Sprintf("error watching WAL and exporting: %+v", err))
 			}
 		}
 	}

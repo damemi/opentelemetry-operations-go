@@ -2131,7 +2131,12 @@ func TestReadWALAndExportRetry(t *testing.T) {
 			},
 		},
 		exportFunc: func(ctx context.Context, req *monitoringpb.CreateTimeSeriesRequest) error {
-			return status.Errorf(codes.Unavailable, "unavailable")
+			statusResp := status.New(codes.Unavailable, "unavailable")
+			statusResp, _ = statusResp.WithDetails(&monitoringpb.CreateTimeSeriesSummary{
+				TotalPointCount:   int32(len(req.TimeSeries)),
+				SuccessPointCount: 0,
+			})
+			return statusResp.Err()
 		},
 	}
 
@@ -2189,4 +2194,45 @@ writeLoop:
 			i++
 		}
 	}
+}
+
+func TestRunWALReadAndExportLoop(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "wal-test-")
+	mExp := &MetricsExporter{
+		obs: selfObservability{zap.NewExample()},
+		cfg: Config{
+			MetricConfig: MetricConfig{
+				WALConfig: &WALConfig{
+					Directory: tmpDir,
+				},
+			},
+		},
+		exportFunc: func(ctx context.Context, req *monitoringpb.CreateTimeSeriesRequest) error {
+			return nil
+		},
+	}
+	_, _, err := mExp.setupWAL()
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	mExp.goroutines.Add(1)
+	go func() {
+		mExp.runWALReadAndExportLoop(ctx)
+	}()
+
+	for i := 1; i < 10; i++ {
+		mExp.wal.mutex.Lock()
+		req := &monitoringpb.CreateTimeSeriesRequest{Name: "foo"}
+		bytes, err := proto.Marshal(req)
+		require.NoError(t, err)
+
+		writeIndex, err := mExp.wal.LastIndex()
+		require.NoError(t, err)
+		err = mExp.wal.Write(writeIndex+1, bytes)
+		require.NoError(t, err)
+		mExp.wal.mutex.Unlock()
+	}
+
+	cancel()
+	mExp.goroutines.Wait()
 }

@@ -550,10 +550,10 @@ func (me *MetricsExporter) watchWALFile(ctx context.Context) error {
 		return err
 	}
 	err = walWatcher.Add(me.wal.path)
+
 	if err != nil {
 		return err
 	}
-
 	watchCh := make(chan error)
 	var wErr error
 	go func() {

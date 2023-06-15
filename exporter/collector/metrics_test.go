@@ -2074,8 +2074,7 @@ func TestCloseWAL(t *testing.T) {
 		cfg: Config{
 			MetricConfig: MetricConfig{
 				WALConfig: &WALConfig{
-					Directory:  tmpDir,
-					MaxBackoff: time.Duration(2112 * time.Second),
+					Directory: tmpDir,
 				},
 			},
 		},
@@ -2097,8 +2096,7 @@ func TestReadWALAndExport(t *testing.T) {
 		cfg: Config{
 			MetricConfig: MetricConfig{
 				WALConfig: &WALConfig{
-					Directory:  tmpDir,
-					MaxBackoff: time.Duration(2112 * time.Second),
+					Directory: tmpDir,
 				},
 			},
 		},
@@ -2154,4 +2152,41 @@ func TestReadWALAndExportRetry(t *testing.T) {
 	require.NoError(t, err)
 	require.LessOrEqual(t, endTime.Sub(startTime), time.Duration(4*time.Second))
 	require.GreaterOrEqual(t, endTime.Sub(startTime), time.Duration(2*time.Second))
+}
+
+func TestWatchWALFile(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "wal-test-")
+	mExp := &MetricsExporter{
+		obs: selfObservability{zap.NewExample()},
+		cfg: Config{
+			MetricConfig: MetricConfig{
+				WALConfig: &WALConfig{
+					Directory: tmpDir,
+				},
+			},
+		},
+	}
+	_, _, err := mExp.setupWAL()
+	require.NoError(t, err)
+
+	watchChan := make(chan error)
+	go func() {
+		watchChan <- mExp.watchWALFile(context.Background())
+	}()
+
+	// continuously write to test WAL until watch returns or timeout
+	// avoids racing or manual sleeps to make sure the watch is started before we write
+	i := 1
+writeLoop:
+	for {
+		err = mExp.wal.Write(uint64(i), []byte("foo"))
+		require.NoError(t, err)
+		select {
+		case err := <-watchChan:
+			require.NoError(t, err)
+			break writeLoop
+		default:
+			i++
+		}
+	}
 }

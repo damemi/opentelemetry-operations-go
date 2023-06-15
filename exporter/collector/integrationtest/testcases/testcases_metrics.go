@@ -289,5 +289,20 @@ var MetricsTestCases = []TestCase{
 		SkipForSDK:    true,
 		ExpectRetries: true,
 	},
+	{
+		Name:                 "Write ahead log enabled, CreateServiceTimeSeries",
+		OTLPInputFixturePath: "testdata/fixtures/metrics/create_service_timeseries_metrics.json",
+		ExpectFixturePath:    "testdata/fixtures/metrics/create_service_timeseries_metrics_wal_expect.json",
+		ConfigureCollector: func(cfg *collector.Config) {
+			cfg.MetricConfig.CreateServiceTimeSeries = true
+			dir, _ := os.MkdirTemp("", "test-wal-")
+			cfg.MetricConfig.WALConfig = &collector.WALConfig{
+				Directory:  dir,
+				MaxBackoff: time.Duration(1 * time.Second),
+			}
+		},
+		// SDK exporter does not support CreateServiceTimeSeries
+		SkipForSDK: true,
+	},
 	// TODO: Add integration tests for workload.googleapis.com metrics from the ops agent
 }

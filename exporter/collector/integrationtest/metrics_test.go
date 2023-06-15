@@ -109,7 +109,6 @@ func TestCollectorMetrics(t *testing.T) {
 			sort.Slice(fixture.CreateServiceTimeSeriesRequests, func(i, j int) bool {
 				return fixture.CreateServiceTimeSeriesRequests[i].Name < fixture.CreateServiceTimeSeriesRequests[j].Name
 			})
-
 			diff := DiffMetricProtos(
 				t,
 				fixture,
@@ -240,7 +239,6 @@ func TestSDKMetrics(t *testing.T) {
 			sort.Slice(fixture.CreateServiceTimeSeriesRequests, func(i, j int) bool {
 				return fixture.CreateServiceTimeSeriesRequests[i].Name < fixture.CreateServiceTimeSeriesRequests[j].Name
 			})
-
 			diff := DiffMetricProtos(
 				t,
 				fixture,

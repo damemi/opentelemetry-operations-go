@@ -206,7 +206,7 @@ func NewGoogleCloudMetricsExporter(
 		shutdownC:         shutdown,
 		timeout:           timeout,
 	}
-	mExp.exportFunc = mExp.export
+	mExp.exportFunc = mExp.exportToTimeSeries
 
 	mExp.requestOpts = make([]func(*context.Context, requestInfo), 0)
 	if cfg.DestinationProjectQuota {
@@ -399,6 +399,18 @@ func (me *MetricsExporter) PushMetrics(ctx context.Context, m pmetric.Metrics) e
 	return nil
 }
 
+// exportToTimeSeries is the default exporting call to GCM.
+// Broken into its own function for unit testing.
+func (me *MetricsExporter) exportToTimeSeries(ctx context.Context, req *monitoringpb.CreateTimeSeriesRequest) error {
+	var err error
+	if me.cfg.MetricConfig.CreateServiceTimeSeries {
+		err = me.createServiceTimeSeries(ctx, req)
+	} else {
+		err = me.createTimeSeries(ctx, req)
+	}
+	return err
+}
+
 // export sends a CreateTimeSeriesRequest to GCM and reports failed/successful points based on the response.
 func (me *MetricsExporter) export(ctx context.Context, req *monitoringpb.CreateTimeSeriesRequest) error {
 	// if this is an empty request, skip it
@@ -407,13 +419,7 @@ func (me *MetricsExporter) export(ctx context.Context, req *monitoringpb.CreateT
 		return nil
 	}
 
-	var err error
-	if me.cfg.MetricConfig.CreateServiceTimeSeries {
-		err = me.createServiceTimeSeries(ctx, req)
-	} else {
-		err = me.createTimeSeries(ctx, req)
-	}
-
+	err := me.exportFunc(ctx, req)
 	s := status.Convert(err)
 	st := statusCodeToString(s)
 
@@ -430,9 +436,6 @@ func (me *MetricsExporter) export(ctx context.Context, req *monitoringpb.CreateT
 	recordPointCountDataPoint(ctx, succeededPoints, "OK")
 	if failedPoints > 0 {
 		recordPointCountDataPoint(ctx, failedPoints, st)
-	}
-	if err != nil {
-		return fmt.Errorf("failed to export time series to GCM: %+v", s)
 	}
 	return err
 }
@@ -463,7 +466,7 @@ func (me *MetricsExporter) readWALAndExport(ctx context.Context) error {
 		// or until user-configured max backoff is hit.
 		backoff := 0
 		for i := 0; i < 12; i++ {
-			err = me.exportFunc(ctx, req)
+			err = me.export(ctx, req)
 			if err != nil {
 				me.obs.log.Warn(fmt.Sprintf("error exporting to GCM: %+v", err))
 			}

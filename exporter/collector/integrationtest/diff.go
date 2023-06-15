@@ -15,7 +15,6 @@
 package integrationtest
 
 import (
-	"sort"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -42,23 +41,6 @@ func DiffMetricProtos(t testing.TB, x, y *protos.MetricExpectFixture) string {
 	testcases.NormalizeMetricFixture(t, y)
 
 	return cmp.Diff(x, y, cmpOptions...)
-}
-
-// SortMetricFixture applies sorting functions to the fixture to normalize for comparison.
-// TODO(damemi): Add similar functions for Logs and Traces.
-func SortMetricFixture(fixture *protos.MetricExpectFixture) {
-	sort.Slice(fixture.CreateTimeSeriesRequests, func(i, j int) bool {
-		return fixture.CreateTimeSeriesRequests[i].Name < fixture.CreateTimeSeriesRequests[j].Name
-	})
-	sort.Slice(fixture.CreateMetricDescriptorRequests, func(i, j int) bool {
-		if fixture.CreateMetricDescriptorRequests[i].Name != fixture.CreateMetricDescriptorRequests[j].Name {
-			return fixture.CreateMetricDescriptorRequests[i].Name < fixture.CreateMetricDescriptorRequests[j].Name
-		}
-		return fixture.CreateMetricDescriptorRequests[i].MetricDescriptor.Name < fixture.CreateMetricDescriptorRequests[j].MetricDescriptor.Name
-	})
-	sort.Slice(fixture.CreateServiceTimeSeriesRequests, func(i, j int) bool {
-		return fixture.CreateServiceTimeSeriesRequests[i].Name < fixture.CreateServiceTimeSeriesRequests[j].Name
-	})
 }
 
 // Diff uses cmp.Diff(), protocmp, and some custom options to compare two protobuf messages.

@@ -2174,26 +2174,112 @@ func TestWatchWALFile(t *testing.T) {
 	_, _, err := mExp.setupWAL()
 	require.NoError(t, err)
 
-	watchChan := make(chan error)
+	mExp.goroutines.Add(1)
 	go func() {
-		watchChan <- mExp.watchWALFile(context.Background())
+		defer mExp.goroutines.Done()
+		err := mExp.watchWALFile(context.Background())
+		require.NoError(t, err)
 	}()
 
-	// continuously write to test WAL until watch returns or timeout
-	// avoids racing or manual sleeps to make sure the watch is started before we write
-	i := 1
-writeLoop:
-	for {
-		err = mExp.wal.Write(uint64(i), []byte("foo"))
+	mExp.goroutines.Add(1)
+	go func() {
+		defer mExp.goroutines.Done()
+		err := mExp.wal.Write(uint64(1), []byte("foo"))
 		require.NoError(t, err)
-		select {
-		case err := <-watchChan:
-			require.NoError(t, err)
-			break writeLoop
-		default:
-			i++
-		}
+	}()
+
+	mExp.goroutines.Wait()
+}
+
+func TestWatchWALFileRename(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "wal-test-")
+	mExp := &MetricsExporter{
+		obs: selfObservability{zap.NewExample()},
+		cfg: Config{
+			MetricConfig: MetricConfig{
+				WALConfig: &WALConfig{
+					Directory: tmpDir,
+				},
+			},
+		},
 	}
+	_, _, err := mExp.setupWAL()
+	require.NoError(t, err)
+
+	mExp.goroutines.Add(1)
+	go func() {
+		defer mExp.goroutines.Done()
+		err := mExp.watchWALFile(context.Background())
+		require.Error(t, err)
+	}()
+
+	mExp.goroutines.Add(1)
+	go func() {
+		defer mExp.goroutines.Done()
+		newDir := mExp.wal.path + "-foo"
+		err := os.Rename(mExp.wal.path, newDir)
+		require.NoError(t, err)
+	}()
+
+	mExp.goroutines.Wait()
+}
+
+func TestWatchWALFileDelete(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "wal-test-")
+	mExp := &MetricsExporter{
+		obs: selfObservability{zap.NewExample()},
+		cfg: Config{
+			MetricConfig: MetricConfig{
+				WALConfig: &WALConfig{
+					Directory: tmpDir,
+				},
+			},
+		},
+	}
+	_, _, err := mExp.setupWAL()
+	require.NoError(t, err)
+
+	mExp.goroutines.Add(1)
+	go func() {
+		defer mExp.goroutines.Done()
+		err := mExp.watchWALFile(context.Background())
+		require.Error(t, err)
+	}()
+
+	mExp.goroutines.Add(1)
+	go func() {
+		defer mExp.goroutines.Done()
+		err := os.RemoveAll(tmpDir)
+		require.NoError(t, err)
+	}()
+
+	mExp.goroutines.Wait()
+}
+
+func TestWatchWALFileTimeout(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "wal-test-")
+	mExp := &MetricsExporter{
+		obs: selfObservability{zap.NewExample()},
+		cfg: Config{
+			MetricConfig: MetricConfig{
+				WALConfig: &WALConfig{
+					Directory: tmpDir,
+				},
+			},
+		},
+	}
+	_, _, err := mExp.setupWAL()
+	require.NoError(t, err)
+	mExp.wal.fileWatchTimeout = time.Duration(1 * time.Second)
+
+	mExp.goroutines.Add(1)
+	go func() {
+		defer mExp.goroutines.Done()
+		err := mExp.watchWALFile(context.Background())
+		require.NoError(t, err)
+	}()
+
+	mExp.goroutines.Wait()
 }
 
 func TestRunWALReadAndExportLoop(t *testing.T) {

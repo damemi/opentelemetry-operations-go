@@ -92,10 +92,12 @@ type MetricsExporter struct {
 
 type exporterWAL struct {
 	*wal.Log
+	watcher *fsnotify.Watcher
 	// the full path of the WAL (user-configured directory + "gcp_metrics_wal")
-	path       string
-	maxBackoff time.Duration
-	mutex      sync.Mutex
+	path             string
+	maxBackoff       time.Duration
+	fileWatchTimeout time.Duration
+	mutex            sync.Mutex
 }
 
 // requestInfo is meant to abstract info from CreateMetricsDescriptorRequests and
@@ -253,6 +255,17 @@ func (me *MetricsExporter) setupWAL() (uint64, uint64, error) {
 	}
 	me.wal.Log = metricWal
 
+	walWatcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return 0, 0, err
+	}
+	err = walWatcher.Add(me.wal.path)
+	if err != nil {
+		return 0, 0, err
+	}
+	me.wal.watcher = walWatcher
+	me.wal.fileWatchTimeout = time.Duration(5 * time.Minute)
+
 	// default to 1 hour exponential backoff
 	me.wal.maxBackoff = time.Duration(3600 * time.Second)
 	if me.cfg.MetricConfig.WALConfig.MaxBackoff != 0 {
@@ -275,6 +288,7 @@ func (me *MetricsExporter) setupWAL() (uint64, uint64, error) {
 
 func (me *MetricsExporter) closeWAL() error {
 	if me.wal != nil && me.wal.Log != nil {
+		me.wal.watcher.Close()
 		err := me.wal.Log.Close()
 		me.wal.Log = nil
 		return err
@@ -518,22 +532,13 @@ func (me *MetricsExporter) readWALAndExport(ctx context.Context) error {
 func (me *MetricsExporter) watchWALFile(ctx context.Context) error {
 	me.goroutines.Add(1)
 	defer me.goroutines.Done()
-	walWatcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return err
-	}
-	err = walWatcher.Add(me.wal.path)
 
-	if err != nil {
-		return err
-	}
 	watchCh := make(chan error)
 	var wErr error
 	go func() {
 		defer func() {
 			watchCh <- wErr
 			close(watchCh)
-			walWatcher.Close()
 		}()
 
 		select {
@@ -542,8 +547,12 @@ func (me *MetricsExporter) watchWALFile(ctx context.Context) error {
 		case <-ctx.Done():
 			wErr = ctx.Err()
 			return
+		case <-time.After(me.wal.fileWatchTimeout):
+			// prevent blocking forever on missed events
+			me.obs.log.Info("WAL file watch timed out with no activity")
+			wErr = nil
 
-		case event, ok := <-walWatcher.Events:
+		case event, ok := <-me.wal.watcher.Events:
 			if !ok {
 				return
 			}
@@ -556,13 +565,13 @@ func (me *MetricsExporter) watchWALFile(ctx context.Context) error {
 				wErr = nil
 			}
 
-		case watchErr, ok := <-walWatcher.Errors:
+		case watchErr, ok := <-me.wal.watcher.Errors:
 			if ok {
 				wErr = watchErr
 			}
 		}
 	}()
-	err = <-watchCh
+	err := <-watchCh
 	return err
 }
 
